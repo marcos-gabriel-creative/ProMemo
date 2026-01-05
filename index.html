@@ -5,736 +5,160 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phomemo M02S Word Processor</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f0f0f0;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-
-        /* Header */
-        .header {
-            background: #2c3e50;
-            color: white;
-            padding: 10px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .header h1 {
-            font-size: 24px;
-            font-weight: 300;
-        }
-
-        .connection-status {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .status-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #e74c3c;
-        }
-
-        .status-indicator.connected {
-            background: #2ecc71;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-
-        /* Toolbar */
-        .toolbar {
-            background: white;
-            padding: 10px 20px;
-            display: flex;
-            gap: 20px;
-            align-items: center;
-            border-bottom: 1px solid #ddd;
-            flex-wrap: wrap;
-        }
-
-        .toolbar-group {
-            display: flex;
-            gap: 5px;
-            align-items: center;
-            border-right: 1px solid #ddd;
-            padding-right: 15px;
-        }
-
-        .toolbar-group:last-child {
-            border-right: none;
-        }
-
-        button {
-            padding: 6px 12px;
-            background: #3498db;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background 0.3s;
-        }
-
-        button:hover {
-            background: #2980b9;
-        }
-
-        button:disabled {
-            background: #95a5a6;
-            cursor: not-allowed;
-        }
-
-        select, input[type="number"] {
-            padding: 6px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        .format-btn {
-            width: 30px;
-            height: 30px;
-            padding: 0;
-            font-weight: bold;
-            background: #ecf0f1;
-            color: #2c3e50;
-        }
-
-        .format-btn.active {
-            background: #3498db;
-            color: white;
-        }
-
-        /* Editor */
-        .editor-container {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            padding: 20px;
-            overflow-y: auto;
-        }
-
-        .paper {
-            background: white;
-            width: 384px; /* 48mm at 203 DPI */
-            min-height: 600px;
-            padding: 20px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            position: relative;
-        }
-
-        #editor {
-            width: 100%;
-            min-height: 100%;
-            border: none;
-            outline: none;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            line-height: 1.6;
-            resize: none;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-
-        /* Preview Canvas (hidden, for printing) */
-        #printCanvas {
-            display: none;
-        }
-
-        /* Status Bar */
-        .status-bar {
-            background: #34495e;
-            color: white;
-            padding: 5px 20px;
-            font-size: 12px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .modal.show {
-            display: flex;
-        }
-
-        .modal-content {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            max-width: 400px;
-            width: 90%;
-        }
-
-        .modal h2 {
-            margin-bottom: 15px;
-        }
-
-        .modal-buttons {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 20px;
-        }
-
-        /* Loading spinner */
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #3498db;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Debug console */
-        .debug-console {
-            position: fixed;
-            bottom: 30px;
-            right: 20px;
-            width: 400px;
-            max-height: 200px;
-            background: rgba(0,0,0,0.9);
-            color: #00ff00;
-            font-family: monospace;
-            font-size: 11px;
-            padding: 10px;
-            overflow-y: auto;
-            display: none;
-            border-radius: 4px;
-        }
-
-        .debug-console.show {
-            display: block;
-        }
-
-        .debug-toggle {
-            position: fixed;
-            bottom: 30px;
-            right: 20px;
-            padding: 5px 10px;
-            background: #333;
-            color: white;
-            font-size: 12px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f0f0f0; display: flex; flex-direction: column; height: 100vh; }
+        .header { background: #2c3e50; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .status-indicator { width: 10px; height: 10px; border-radius: 50%; background: #e74c3c; margin-left: 10px; }
+        .status-indicator.connected { background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
+        .toolbar { background: white; padding: 10px 20px; display: flex; gap: 20px; align-items: center; border-bottom: 1px solid #ddd; flex-wrap: wrap; }
+        .toolbar-group { display: flex; gap: 5px; align-items: center; border-right: 1px solid #ddd; padding-right: 15px; }
+        button { padding: 8px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:disabled { background: #95a5a6; }
+        .editor-container { flex: 1; display: flex; justify-content: center; padding: 20px; overflow-y: auto; }
+        .paper { background: white; width: 384px; min-height: 500px; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        #editor { width: 100%; min-height: 100%; border: none; outline: none; font-family: 'Courier New', monospace; font-size: 14pt; resize: none; white-space: pre-wrap; }
+        #debugConsole { position: fixed; bottom: 20px; right: 20px; width: 300px; height: 150px; background: rgba(0,0,0,0.8); color: #0f0; font-family: monospace; font-size: 10px; padding: 10px; overflow-y: auto; display: none; }
     </style>
 </head>
 <body>
-    <!-- Header -->
     <div class="header">
-        <h1>Phomemo M02S Word Processor</h1>
-        <div class="connection-status">
+        <h1>M02S Word Processor</h1>
+        <div style="display:flex; align-items:center;">
             <span id="connectionText">Disconnected</span>
             <div class="status-indicator" id="statusIndicator"></div>
-            <button id="connectBtn">Connect Printer</button>
+            <button id="connectBtn" style="margin-left:15px;">Connect Printer</button>
         </div>
     </div>
 
-    <!-- Toolbar -->
     <div class="toolbar">
         <div class="toolbar-group">
-            <button id="printBtn" disabled>Print</button>
-            <button id="clearBtn">Clear</button>
-            <button id="testBtn" disabled>Test Pattern</button>
+            <button id="printBtn" disabled style="background:#2ecc71;">Print</button>
+            <button id="clearBtn" style="background:#e74c3c;">Clear</button>
         </div>
-        
         <div class="toolbar-group">
             <select id="fontSize">
-                <option value="10">10pt</option>
-                <option value="12" selected>12pt</option>
-                <option value="14">14pt</option>
-                <option value="16">16pt</option>
-                <option value="18">18pt</option>
+                <option value="12">12pt</option>
+                <option value="16" selected>16pt</option>
+                <option value="20">20pt</option>
                 <option value="24">24pt</option>
             </select>
-            
-            <select id="fontFamily">
-                <option value="monospace">Monospace</option>
-                <option value="sans-serif">Sans Serif</option>
-                <option value="serif">Serif</option>
-            </select>
-        </div>
-
-        <div class="toolbar-group">
-            <button class="format-btn" id="boldBtn">B</button>
-            <button class="format-btn" id="italicBtn">I</button>
-            <button class="format-btn" id="underlineBtn">U</button>
-        </div>
-
-        <div class="toolbar-group">
-            <label>Density:</label>
-            <input type="number" id="density" min="1" max="15" value="6" style="width: 50px;">
         </div>
     </div>
 
-    <!-- Editor -->
     <div class="editor-container">
         <div class="paper">
-            <textarea id="editor" placeholder="Start typing here..."></textarea>
+            <textarea id="editor" placeholder="Start typing..."></textarea>
         </div>
     </div>
 
-    <!-- Status Bar -->
-    <div class="status-bar">
-        <span id="charCount">0 characters</span>
-        <span id="printerInfo">No printer connected</span>
-    </div>
-
-    <!-- Hidden canvas for printing -->
-    <canvas id="printCanvas"></canvas>
-
-    <!-- Connection Modal -->
-    <div id="connectionModal" class="modal">
-        <div class="modal-content">
-            <h2>Connecting to Printer</h2>
-            <div class="spinner"></div>
-            <p style="text-align: center; margin-top: 10px;">Looking for Phomemo M02S...</p>
-        </div>
-    </div>
-
-    <!-- Debug Console -->
-    <div class="debug-toggle" onclick="toggleDebug()">Debug Console</div>
-    <div id="debugConsole" class="debug-console"></div>
+    <div id="debugConsole"></div>
+    <canvas id="printCanvas" style="display:none;"></canvas>
 
     <script>
-        // Debug logging
-        const debugConsole = document.getElementById('debugConsole');
-        let debugMode = false;
-
-        function toggleDebug() {
-            debugMode = !debugMode;
-            debugConsole.classList.toggle('show');
-        }
-
-        function debugLog(message) {
-            console.log(message);
-            if (debugMode) {
-                const time = new Date().toLocaleTimeString();
-                debugConsole.innerHTML += `[${time}] ${message}<br>`;
-                debugConsole.scrollTop = debugConsole.scrollHeight;
-            }
-        }
-
-        // Printer connection variables
-        let device = null;
-        let characteristic = null;
-        let isConnected = false;
-
-        // UI Elements
-        const connectBtn = document.getElementById('connectBtn');
-        const printBtn = document.getElementById('printBtn');
-        const testBtn = document.getElementById('testBtn');
-        const clearBtn = document.getElementById('clearBtn');
-        const editor = document.getElementById('editor');
-        const statusIndicator = document.getElementById('statusIndicator');
-        const connectionText = document.getElementById('connectionText');
-        const charCount = document.getElementById('charCount');
-        const printerInfo = document.getElementById('printerInfo');
-        const connectionModal = document.getElementById('connectionModal');
-        const fontSize = document.getElementById('fontSize');
-        const fontFamily = document.getElementById('fontFamily');
-        const density = document.getElementById('density');
-
-        // Phomemo M02S Service and Characteristic UUIDs
+        let device, characteristic;
         const SERVICE_UUID = '0000ff00-0000-1000-8000-00805f9b34fb';
-        const CHARACTERISTIC_UUID = '0000ff01-0000-1000-8000-00805f9b34fb';
+        const CHAR_UUID = '0000ff01-0000-1000-8000-00805f9b34fb';
 
-        // Connect to printer
-        connectBtn.addEventListener('click', async () => {
-            if (isConnected) {
-                disconnect();
-            } else {
-                await connectToPrinter();
-            }
-        });
+        const debug = (msg) => {
+            const console = document.getElementById('debugConsole');
+            console.style.display = 'block';
+            console.innerHTML += `> ${msg}<br>`;
+            console.scrollTop = console.scrollHeight;
+        };
 
-        async function connectToPrinter() {
+        document.getElementById('connectBtn').onclick = async () => {
             try {
-                connectionModal.classList.add('show');
-                debugLog('Requesting Bluetooth device...');
-                
-                // Request Bluetooth device
                 device = await navigator.bluetooth.requestDevice({
-                    filters: [
-                        { namePrefix: 'M02' },
-                        { namePrefix: 'Phomemo' }
-                    ],
+                    filters: [{ namePrefix: 'M02' }, { namePrefix: 'Phomemo' }],
                     optionalServices: [SERVICE_UUID]
                 });
-
-                debugLog(`Found device: ${device.name}`);
-
-                // Connect to GATT server
                 const server = await device.gatt.connect();
-                debugLog('Connected to GATT server');
-
                 const service = await server.getPrimaryService(SERVICE_UUID);
-                debugLog('Got primary service');
+                characteristic = await service.getCharacteristic(CHAR_UUID);
+                
+                document.getElementById('statusIndicator').classList.add('connected');
+                document.getElementById('connectionText').innerText = "Connected";
+                document.getElementById('printBtn').disabled = false;
+                debug("Printer Ready.");
+            } catch (err) {
+                debug("Error: " + err.message);
+            }
+        };
 
-                characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-                debugLog('Got characteristic');
-
-                // Update UI
-                isConnected = true;
-                statusIndicator.classList.add('connected');
-                connectionText.textContent = `Connected: ${device.name}`;
-                connectBtn.textContent = 'Disconnect';
-                printBtn.disabled = false;
-                testBtn.disabled = false;
-                printerInfo.textContent = `${device.name} ready`;
-
-                connectionModal.classList.remove('show');
-                debugLog('Connection successful!');
-
-            } catch (error) {
-                console.error('Connection failed:', error);
-                debugLog(`Connection failed: ${error.message}`);
-                connectionModal.classList.remove('show');
-                alert('Failed to connect to printer. Make sure your Phomemo M02S is turned on and in pairing mode.');
+        async function sendToPrinter(data) {
+            const CHUNK = 20;
+            for (let i = 0; i < data.length; i += CHUNK) {
+                const slice = data.slice(i, i + CHUNK);
+                await characteristic.writeValueWithoutResponse(new Uint8Array(slice));
+                await new Promise(r => setTimeout(r, 35)); // Safe delay for buffer
             }
         }
 
-        function disconnect() {
-            if (device && device.gatt.connected) {
-                device.gatt.disconnect();
-            }
-            isConnected = false;
-            statusIndicator.classList.remove('connected');
-            connectionText.textContent = 'Disconnected';
-            connectBtn.textContent = 'Connect Printer';
-            printBtn.disabled = true;
-            testBtn.disabled = true;
-            printerInfo.textContent = 'No printer connected';
-            debugLog('Disconnected from printer');
-        }
+        document.getElementById('printBtn').onclick = async () => {
+            const canvas = document.getElementById('printCanvas');
+            const ctx = canvas.getContext('2d');
+            const editor = document.getElementById('editor');
+            const fSize = document.getElementById('fontSize').value;
 
-        // Send data to printer
-        async function sendData(data) {
-            if (!characteristic) {
-                throw new Error('No characteristic available');
-            }
+            // Setup Canvas Width (M02S = 384px)
+            canvas.width = 384;
+            const lines = editor.value.split('\n');
+            canvas.height = lines.length * (fSize * 1.5) + 40;
+
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'black';
+            ctx.font = `${fSize}pt Courier New`;
             
-            // BLE packet size is typically 20 bytes
-            const CHUNK_SIZE = 20;
-            
-            for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-                const chunk = data.slice(i, Math.min(i + CHUNK_SIZE, data.length));
-                await characteristic.writeValueWithoutResponse(chunk);
-                
-                // Small delay to prevent buffer overflow
-                if (i + CHUNK_SIZE < data.length) {
-                    await new Promise(resolve => setTimeout(resolve, 10));
-                }
-            }
-        }
-
-        // Print function using correct Phomemo protocol
-        async function printDocument() {
-            const text = editor.value;
-            if (!text.trim()) {
-                alert('Please enter some text to print');
-                return;
-            }
-
-            try {
-                printBtn.disabled = true;
-                printBtn.textContent = 'Printing...';
-                debugLog('Starting print job...');
-                
-                // Create canvas to render text
-                const canvas = document.getElementById('printCanvas');
-                const ctx = canvas.getContext('2d');
-                
-                // M02S has 384 dots width (48mm at 203 DPI = 8 dots/mm)
-                const PAPER_WIDTH = 384;
-                const BYTES_PER_LINE = 48; // 384 dots / 8 bits
-                
-                canvas.width = PAPER_WIDTH;
-                
-                // Set font
-                const fontSizeVal = fontSize.value;
-                const fontFamilyVal = fontFamily.value;
-                ctx.font = `${fontSizeVal}pt ${fontFamilyVal}`;
-                
-                // Wrap text and calculate height
-                const lines = wrapText(ctx, text, PAPER_WIDTH - 40);
-                const lineHeight = parseInt(fontSizeVal) * 1.5;
-                const totalHeight = lines.length * lineHeight + 40;
-                canvas.height = totalHeight;
-                
-                // Clear canvas with white background
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Draw text in black
-                ctx.fillStyle = 'black';
-                ctx.font = `${fontSizeVal}pt ${fontFamilyVal}`;
-                
-                let y = 30;
-                lines.forEach(line => {
-                    ctx.fillText(line, 20, y);
-                    y += lineHeight;
-                });
-                
-                // Get image data and convert to bitmap
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const bitmap = [];
-                
-                // Convert to 1-bit bitmap (each byte represents 8 pixels)
-                for (let y = 0; y < imageData.height; y++) {
-                    const line = new Uint8Array(BYTES_PER_LINE);
-                    
-                    for (let x = 0; x < imageData.width; x++) {
-                        const idx = (y * imageData.width + x) * 4;
-                        const gray = (imageData.data[idx] * 0.299 + 
-                                     imageData.data[idx + 1] * 0.587 + 
-                                     imageData.data[idx + 2] * 0.114);
-                        
-                        // Black pixels (text) should be 1
-                        if (gray < 128) {
-                            const byteIdx = Math.floor(x / 8);
-                            const bitIdx = 7 - (x % 8);
-                            line[byteIdx] |= (1 << bitIdx);
-                        }
-                    }
-                    bitmap.push(line);
-                }
-                
-                debugLog(`Bitmap ready: ${bitmap.length} lines, ${BYTES_PER_LINE} bytes per line`);
-                
-                // Send print commands according to Phomemo protocol
-                
-                // 1. Initialize printer (ESC @)
-                await sendData(new Uint8Array([0x1B, 0x40]));
-                debugLog('Sent: ESC @ (initialize)');
-                
-                // 2. Set justification (ESC a)
-                await sendData(new Uint8Array([0x1B, 0x61, 0x00])); // Left align
-                debugLog('Sent: ESC a (alignment)');
-                
-                // 3. Phomemo specific initialization
-                await sendData(new Uint8Array([0x1F, 0x11, 0x02, 0x04]));
-                debugLog('Sent: Phomemo init sequence');
-                
-                // 4. Send bitmap in blocks of max 255 lines
-                let remainingLines = bitmap.length;
-                let currentLine = 0;
-                
-                while (remainingLines > 0) {
-                    const blockLines = Math.min(remainingLines, 255);
-                    
-                    // Send block marker (GS v 0)
-                    const blockHeader = new Uint8Array([
-                        0x1D, 0x76, 0x30,  // GS v 0 command
-                        0x00,               // mode: normal
-                        0x30, 0x00,         // 48 bytes per line (little-endian)
-                        blockLines, 0x00    // number of lines (little-endian)
-                    ]);
-                    
-                    await sendData(blockHeader);
-                    debugLog(`Sent block header: ${blockLines} lines`);
-                    
-                    // Send bitmap data for this block
-                    for (let i = 0; i < blockLines; i++) {
-                        await sendData(bitmap[currentLine + i]);
-                        
-                        // Progress update every 10 lines
-                        if (i % 10 === 0) {
-                            await new Promise(resolve => setTimeout(resolve, 5));
-                        }
-                    }
-                    
-                    currentLine += blockLines;
-                    remainingLines -= blockLines;
-                    debugLog(`Sent ${blockLines} lines of bitmap data`);
-                }
-                
-                // 5. Send footer commands
-                // Feed paper (ESC d)
-                await sendData(new Uint8Array([0x1B, 0x64, 0x02]));
-                await sendData(new Uint8Array([0x1B, 0x64, 0x02]));
-                debugLog('Sent: ESC d (paper feed)');
-                
-                // Phomemo specific end sequence
-                await sendData(new Uint8Array([0x1F, 0x11, 0x08]));
-                await sendData(new Uint8Array([0x1F, 0x11, 0x0E]));
-                await sendData(new Uint8Array([0x1F, 0x11, 0x07]));
-                await sendData(new Uint8Array([0x1F, 0x11, 0x09]));
-                debugLog('Sent: Phomemo end sequence');
-                
-                debugLog('Print job completed successfully!');
-                
-                printBtn.disabled = false;
-                printBtn.textContent = 'Print';
-                
-            } catch (error) {
-                console.error('Print failed:', error);
-                debugLog(`Print failed: ${error.message}`);
-                alert('Failed to print. Please check the connection and try again.');
-                printBtn.disabled = false;
-                printBtn.textContent = 'Print';
-            }
-        }
-
-        // Test pattern for debugging
-        async function printTestPattern() {
-            try {
-                testBtn.disabled = true;
-                testBtn.textContent = 'Testing...';
-                debugLog('Printing test pattern...');
-                
-                // Simple test: send initialization and a small bitmap
-                await sendData(new Uint8Array([0x1B, 0x40])); // ESC @
-                await sendData(new Uint8Array([0x1B, 0x61, 0x01])); // Center align
-                await sendData(new Uint8Array([0x1F, 0x11, 0x02, 0x04])); // Phomemo init
-                
-                // Create a simple test pattern (8 lines of alternating patterns)
-                const testPattern = new Uint8Array([
-                    0x1D, 0x76, 0x30, 0x00,  // GS v 0
-                    0x30, 0x00,               // 48 bytes per line
-                    0x08, 0x00                // 8 lines
-                ]);
-                await sendData(testPattern);
-                
-                // Send alternating pattern
-                for (let i = 0; i < 8; i++) {
-                    const line = new Uint8Array(48);
-                    for (let j = 0; j < 48; j++) {
-                        line[j] = i % 2 === 0 ? 0xAA : 0x55;
-                    }
-                    await sendData(line);
-                }
-                
-                // Footer
-                await sendData(new Uint8Array([0x1B, 0x64, 0x02]));
-                await sendData(new Uint8Array([0x1B, 0x64, 0x02]));
-                await sendData(new Uint8Array([0x1F, 0x11, 0x08]));
-                await sendData(new Uint8Array([0x1F, 0x11, 0x0E]));
-                await sendData(new Uint8Array([0x1F, 0x11, 0x07]));
-                await sendData(new Uint8Array([0x1F, 0x11, 0x09]));
-                
-                debugLog('Test pattern sent!');
-                testBtn.disabled = false;
-                testBtn.textContent = 'Test Pattern';
-                
-            } catch (error) {
-                console.error('Test failed:', error);
-                debugLog(`Test failed: ${error.message}`);
-                testBtn.disabled = false;
-                testBtn.textContent = 'Test Pattern';
-            }
-        }
-
-        // Wrap text to fit paper width
-        function wrapText(ctx, text, maxWidth) {
-            const words = text.split(' ');
-            const lines = [];
-            let currentLine = '';
-            
-            words.forEach(word => {
-                const testLine = currentLine + (currentLine ? ' ' : '') + word;
-                const metrics = ctx.measureText(testLine);
-                
-                if (metrics.width > maxWidth && currentLine) {
-                    lines.push(currentLine);
-                    currentLine = word;
-                } else {
-                    currentLine = testLine;
-                }
+            lines.forEach((line, i) => {
+                ctx.fillText(line, 10, 40 + (i * fSize * 1.5));
             });
-            
-            if (currentLine) {
-                lines.push(currentLine);
+
+            // Process Image to Bitmap
+            const imgData = ctx.getImageData(0, 0, 384, canvas.height);
+            const bitmap = [];
+            for (let y = 0; y < canvas.height; y++) {
+                const row = new Uint8Array(48);
+                for (let x = 0; x < 384; x++) {
+                    const idx = (y * 384 + x) * 4;
+                    const avg = (imgData.data[idx] + imgData.data[idx+1] + imgData.data[idx+2]) / 3;
+                    if (avg < 128) row[Math.floor(x / 8)] |= (0x80 >> (x % 8));
+                }
+                bitmap.push(...row);
             }
-            
-            return lines;
-        }
 
-        // Event listeners
-        printBtn.addEventListener('click', printDocument);
-        testBtn.addEventListener('click', printTestPattern);
+            try {
+                debug("Starting Print Job...");
+                // Handshake
+                await sendToPrinter([0x1B, 0x40]); // Reset
+                await sendToPrinter([0x1F, 0x11, 0x02, 0x04]); // Wake
 
-        clearBtn.addEventListener('click', () => {
-            if (confirm('Clear all text?')) {
-                editor.value = '';
-                updateCharCount();
+                // Block Splitting (Required for M02S)
+                const MAX_BLOCK = 255;
+                for (let i = 0; i < canvas.height; i += MAX_BLOCK) {
+                    const blockLines = Math.min(MAX_BLOCK, canvas.height - i);
+                    const blockData = bitmap.slice(i * 48, (i + blockLines) * 48);
+                    
+                    const header = [
+                        0x1D, 0x76, 0x30, 0x00, 
+                        48, 0x00, // 48 bytes wide
+                        blockLines & 0xFF, (blockLines >> 8) & 0xFF
+                    ];
+                    await sendToPrinter(header);
+                    await sendToPrinter(blockData);
+                }
+
+                // Feed and End
+                await sendToPrinter([0x1B, 0x64, 0x03, 0x1F, 0x11, 0x08]);
+                debug("Print Complete.");
+            } catch (err) {
+                debug("Print Error: " + err.message);
             }
-        });
+        };
 
-        // Update character count
-        function updateCharCount() {
-            const count = editor.value.length;
-            charCount.textContent = `${count} character${count !== 1 ? 's' : ''}`;
-        }
-
-        editor.addEventListener('input', updateCharCount);
-
-        // Format buttons (visual only for now)
-        document.getElementById('boldBtn').addEventListener('click', () => {
-            editor.style.fontWeight = editor.style.fontWeight === 'bold' ? 'normal' : 'bold';
-            document.getElementById('boldBtn').classList.toggle('active');
-        });
-
-        document.getElementById('italicBtn').addEventListener('click', () => {
-            editor.style.fontStyle = editor.style.fontStyle === 'italic' ? 'normal' : 'italic';
-            document.getElementById('italicBtn').classList.toggle('active');
-        });
-
-        document.getElementById('underlineBtn').addEventListener('click', () => {
-            editor.style.textDecoration = editor.style.textDecoration === 'underline' ? 'none' : 'underline';
-            document.getElementById('underlineBtn').classList.toggle('active');
-        });
-
-        fontSize.addEventListener('change', () => {
-            editor.style.fontSize = fontSize.value + 'pt';
-        });
-
-        fontFamily.addEventListener('change', () => {
-            editor.style.fontFamily = fontFamily.value;
-        });
-
-        // Check for Web Bluetooth support
-        if (!navigator.bluetooth) {
-            alert('Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or another Chromium-based browser.');
-            connectBtn.disabled = true;
-        }
+        document.getElementById('clearBtn').onclick = () => {
+            document.getElementById('editor').value = "";
+        };
     </script>
 </body>
 </html>
