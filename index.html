@@ -118,6 +118,76 @@
         }
       };
 
+      const textToBitmap = (text) => {
+        // Create canvas to render text
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // M02S specs: 384 pixels wide (48mm at 203dpi)
+        const width = 384;
+        const fontSize = 24;
+        const lineHeight = 32;
+        
+        // Set font
+        ctx.font = `${fontSize}px "Space Mono", monospace`;
+        
+        // Calculate required height
+        const lines = text.split('\n');
+        const height = Math.max(lineHeight * lines.length, 100);
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // White background
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, width, height);
+        
+        // Black text
+        ctx.fillStyle = 'black';
+        ctx.font = `${fontSize}px "Space Mono", monospace`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        
+        // Draw each line
+        lines.forEach((line, i) => {
+          ctx.fillText(line, 10, i * lineHeight + 5);
+        });
+        
+        return canvas;
+      };
+
+      const canvasToBitmapData = (canvas) => {
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const pixels = imageData.data;
+        
+        // Convert to 1-bit bitmap (48 bytes per line)
+        const bytesPerLine = 48; // 384 pixels / 8 bits
+        const bitmapData = [];
+        
+        for (let y = 0; y < canvas.height; y++) {
+          const lineData = [];
+          for (let x = 0; x < bytesPerLine; x++) {
+            let byte = 0;
+            for (let bit = 0; bit < 8; bit++) {
+              const pixelX = x * 8 + bit;
+              const pixelIndex = (y * canvas.width + pixelX) * 4;
+              
+              // Check if pixel is black (inverted: 0 = white, 1 = black)
+              const r = pixels[pixelIndex];
+              const isBlack = r < 128;
+              if (isBlack) {
+                byte |= (1 << (7 - bit));
+              }
+            }
+            lineData.push(byte);
+          }
+          bitmapData.push(lineData);
+        }
+        
+        return bitmapData;
+      };
+
       const printText = async () => {
         if (!characteristic || !text.trim()) {
           setStatus('Nothing to print');
@@ -125,25 +195,53 @@
         }
 
         try {
+          setStatus('Converting to bitmap...');
+
+          // Convert text to bitmap
+          const canvas = textToBitmap(text);
+          const bitmapData = canvasToBitmapData(canvas);
+          
           setStatus('Printing...');
 
-          // Initialize
+          // Send header
           await sendData(commands.init);
+          await sendData(commands.alignLeft);
+          await sendData([0x1f, 0x11, 0x02, 0x04]);
 
-          // Send text
-          const encoder = new TextEncoder();
-          const lines = text.split('\n');
-          
-          for (const line of lines) {
-            if (line.trim()) {
-              const encoded = encoder.encode(line);
-              await sendData(Array.from(encoded));
+          // Send bitmap data in chunks (max 255 lines per block)
+          const maxLinesPerBlock = 255;
+          let remainingLines = bitmapData.length;
+          let offset = 0;
+
+          while (remainingLines > 0) {
+            const linesToSend = Math.min(remainingLines, maxLinesPerBlock);
+            
+            // Block marker: GS v 0
+            const blockHeader = [
+              0x1d, 0x76, 0x30,  // GS v 0 command
+              0x00,              // mode: normal
+              0x30, 0x00,        // 48 bytes per line (little-endian)
+              linesToSend & 0xFF, (linesToSend >> 8) & 0xFF  // number of lines (little-endian)
+            ];
+            
+            await sendData(blockHeader);
+            
+            // Send bitmap data
+            for (let i = 0; i < linesToSend; i++) {
+              await sendData(bitmapData[offset + i]);
             }
-            await sendData(commands.lineFeed);
+            
+            offset += linesToSend;
+            remainingLines -= linesToSend;
           }
 
-          // Feed some extra lines and cut
-          await sendData(commands.feedLines(3));
+          // Send footer
+          await sendData([0x1b, 0x64, 0x02]); // Feed 2 lines
+          await sendData([0x1b, 0x64, 0x02]); // Feed 2 more lines
+          await sendData([0x1f, 0x11, 0x08]);
+          await sendData([0x1f, 0x11, 0x0e]);
+          await sendData([0x1f, 0x11, 0x07]);
+          await sendData([0x1f, 0x11, 0x09]);
           
           setStatus('Printed successfully!');
           
