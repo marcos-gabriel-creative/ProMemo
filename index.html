@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>v2 Thermal Writer - Phomemo M02S</title>
+  <title>V3 Thermal Writer - Phomemo M02S</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -22,31 +22,14 @@
       const [characteristic, setCharacteristic] = useState(null);
       const textareaRef = useRef(null);
 
-      // ESC/POS commands
-      const ESC = 0x1B;
-      const GS = 0x1D;
-      
-      const commands = {
-        init: [ESC, 0x40], // Initialize printer
-        lineFeed: [0x0A],
-        cut: [GS, 0x56, 0x00], // Cut paper
-        alignLeft: [ESC, 0x61, 0x00],
-        alignCenter: [ESC, 0x61, 0x01],
-        alignRight: [ESC, 0x61, 0x02],
-        bold: [ESC, 0x45, 0x01],
-        boldOff: [ESC, 0x45, 0x00],
-        feedLines: (n) => [ESC, 0x64, n], // Feed n lines
-      };
-
       const connectToPrinter = async () => {
         try {
           setStatus('Connecting...');
           
-          // Request Bluetooth device - accept all services to discover them
+          // Request Bluetooth device with the correct service UUID
           const device = await navigator.bluetooth.requestDevice({
             filters: [{ namePrefix: 'M02' }],
-            acceptAllDevices: false,
-            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2']
+            optionalServices: ['0000ff00-0000-1000-8000-00805f9b34fb']
           });
 
           setDevice(device);
@@ -59,45 +42,18 @@
             setCharacteristic(null);
           });
 
-          setStatus('Discovering services...');
-
+          setStatus('Connecting to GATT server...');
           const server = await device.gatt.connect();
           
-          // Discover all services
-          const services = await server.getPrimaryServices();
-          console.log('Available services:', services);
+          setStatus('Getting service...');
+          const service = await server.getPrimaryService('0000ff00-0000-1000-8000-00805f9b34fb');
           
-          let foundService = null;
-          let foundChar = null;
-          
-          // Try to find a writable characteristic
-          for (const service of services) {
-            console.log('Service UUID:', service.uuid);
-            const characteristics = await service.getCharacteristics();
-            
-            for (const char of characteristics) {
-              console.log('  Characteristic UUID:', char.uuid, 'Properties:', char.properties);
-              
-              // Look for a writable characteristic
-              if (char.properties.write || char.properties.writeWithoutResponse) {
-                foundService = service;
-                foundChar = char;
-                console.log('  ✓ Found writable characteristic!');
-                break;
-              }
-            }
-            
-            if (foundChar) break;
-          }
+          setStatus('Getting characteristic...');
+          const char = await service.getCharacteristic('0000ff02-0000-1000-8000-00805f9b34fb');
 
-          if (!foundChar) {
-            setStatus('No writable characteristic found. Check console for details.');
-            return;
-          }
-
-          setCharacteristic(foundChar);
+          setCharacteristic(char);
           setIsConnected(true);
-          setStatus('Connected! Service: ' + foundService.uuid.substring(0, 8) + '...');
+          setStatus('Connected to ' + device.name);
           
         } catch (error) {
           console.error('Connection failed:', error);
@@ -116,42 +72,73 @@
         setStatus('Disconnected');
       };
 
-      const sendData = async (data) => {
-        if (!characteristic || !device || !device.gatt.connected) {
-          throw new Error('Device not connected');
-        }
+      // Packet size for Bluetooth transmission
+      const PACKET_SIZE_BYTES = 128;
+
+      // Header data for print session
+      const getHeaderData = (widthBytes, heightBytes) => {
+        return new Uint8Array([
+          0x1b, 0x40,           // ESC @ - initialize printer
+          0x1d, 0x76, 0x30, 0x00, // GS v 0 - raster bit image
+          widthBytes & 0xFF, (widthBytes >> 8) & 0xFF,     // width in bytes (little-endian)
+          heightBytes & 0xFF, (heightBytes >> 8) & 0xFF    // height in bytes (little-endian)
+        ]);
+      };
+
+      // End data for print session
+      const END_DATA = new Uint8Array([0x1b, 0x64, 0x00]); // ESC d - print and feed
+
+      // Determine if pixel should be black (0) or white (1)
+      const getWhitePixel = (canvas, imageData, x, y) => {
+        const idx = (canvas.width * y + x) * 4;
+        const red = imageData[idx];
+        const green = imageData[idx + 1];
+        const blue = imageData[idx + 2];
+        // Return 0 for black pixels, 1 for white pixels
+        return red + green + blue > 384 ? 1 : 0;
+      };
+
+      // Convert canvas to print data
+      const getPrintData = (canvas) => {
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
         
-        const chunkSize = 20; // Bluetooth LE characteristic write limit
-        for (let i = 0; i < data.length; i += chunkSize) {
-          const chunk = data.slice(i, i + chunkSize);
-          
-          try {
-            await characteristic.writeValue(new Uint8Array(chunk));
-            // Longer delay for thermal printers - they need time to process
-            await new Promise(resolve => setTimeout(resolve, 100));
-          } catch (error) {
-            console.error('Send error:', error);
-            throw error;
+        // Each 8 pixels in a row is represented by a byte
+        const data = new Uint8Array((canvas.width / 8) * canvas.height);
+        let offset = 0;
+        
+        // Loop through image rows
+        for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width / 8; x++) {
+            const x8 = x * 8;
+            // Convert 8 pixels to 1 byte
+            data[offset++] =
+              getWhitePixel(canvas, imageData, x8 + 0, y) * 128 +
+              getWhitePixel(canvas, imageData, x8 + 1, y) * 64 +
+              getWhitePixel(canvas, imageData, x8 + 2, y) * 32 +
+              getWhitePixel(canvas, imageData, x8 + 3, y) * 16 +
+              getWhitePixel(canvas, imageData, x8 + 4, y) * 8 +
+              getWhitePixel(canvas, imageData, x8 + 5, y) * 4 +
+              getWhitePixel(canvas, imageData, x8 + 6, y) * 2 +
+              getWhitePixel(canvas, imageData, x8 + 7, y);
           }
         }
+        
+        return data;
       };
 
       const textToBitmap = (text) => {
-        // Create canvas to render text
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // M02S specs: 384 pixels wide (48mm at 203dpi)
+        // M02S specs: 384 pixels wide (48mm at 8 pixels/mm = 203 DPI)
         const width = 384;
         const fontSize = 24;
         const lineHeight = 32;
         
-        // Set font
-        ctx.font = `${fontSize}px "Space Mono", monospace`;
-        
         // Calculate required height
         const lines = text.split('\n');
-        const height = Math.max(lineHeight * lines.length, 100);
+        const height = Math.max(lineHeight * lines.length + 20, 100);
         
         canvas.width = width;
         canvas.height = height;
@@ -168,42 +155,10 @@
         
         // Draw each line
         lines.forEach((line, i) => {
-          ctx.fillText(line, 10, i * lineHeight + 5);
+          ctx.fillText(line, 10, i * lineHeight + 10);
         });
         
         return canvas;
-      };
-
-      const canvasToBitmapData = (canvas) => {
-        const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const pixels = imageData.data;
-        
-        // Convert to 1-bit bitmap (48 bytes per line)
-        const bytesPerLine = 48; // 384 pixels / 8 bits
-        const bitmapData = [];
-        
-        for (let y = 0; y < canvas.height; y++) {
-          const lineData = [];
-          for (let x = 0; x < bytesPerLine; x++) {
-            let byte = 0;
-            for (let bit = 0; bit < 8; bit++) {
-              const pixelX = x * 8 + bit;
-              const pixelIndex = (y * canvas.width + pixelX) * 4;
-              
-              // Check if pixel is black (inverted: 0 = white, 1 = black)
-              const r = pixels[pixelIndex];
-              const isBlack = r < 128;
-              if (isBlack) {
-                byte |= (1 << (7 - bit));
-              }
-            }
-            lineData.push(byte);
-          }
-          bitmapData.push(lineData);
-        }
-        
-        return bitmapData;
       };
 
       const printText = async () => {
@@ -213,7 +168,7 @@
         }
 
         try {
-          // Check connection before starting
+          // Check connection
           if (!device || !device.gatt.connected) {
             setStatus('Printer disconnected. Please reconnect.');
             setIsConnected(false);
@@ -224,67 +179,39 @@
 
           // Convert text to bitmap
           const canvas = textToBitmap(text);
-          const bitmapData = canvasToBitmapData(canvas);
+          const printData = getPrintData(canvas);
           
-          setStatus('Printing... (this may take a minute)');
-
+          const widthBytes = canvas.width / 8;
+          const heightBytes = canvas.height;
+          
+          setStatus('Sending header...');
+          
           // Send header
-          await sendData(commands.init);
-          await sendData(commands.alignLeft);
-          await sendData([0x1f, 0x11, 0x02, 0x04]);
-
-          // Send bitmap data in smaller chunks (reduce from 255 to 50 lines per block)
-          const maxLinesPerBlock = 50;
-          let remainingLines = bitmapData.length;
-          let offset = 0;
-          let blockNum = 0;
-
-          while (remainingLines > 0) {
-            // Check connection every block
-            if (!device.gatt.connected) {
-              throw new Error('Connection lost during printing');
-            }
-
-            const linesToSend = Math.min(remainingLines, maxLinesPerBlock);
-            blockNum++;
-            setStatus(`Printing block ${blockNum}... (${remainingLines} lines remaining)`);
+          await characteristic.writeValueWithResponse(
+            getHeaderData(widthBytes, heightBytes)
+          );
+          
+          setStatus('Printing...');
+          
+          // Send data in chunks
+          for (let i = 0; i < printData.length; i += PACKET_SIZE_BYTES) {
+            const chunk = printData.slice(i, Math.min(i + PACKET_SIZE_BYTES, printData.length));
+            await characteristic.writeValueWithResponse(chunk);
             
-            // Block marker: GS v 0
-            const blockHeader = [
-              0x1d, 0x76, 0x30,  // GS v 0 command
-              0x00,              // mode: normal
-              0x30, 0x00,        // 48 bytes per line (little-endian)
-              linesToSend & 0xFF, (linesToSend >> 8) & 0xFF  // number of lines (little-endian)
-            ];
-            
-            await sendData(blockHeader);
-            
-            // Send bitmap data line by line
-            for (let i = 0; i < linesToSend; i++) {
-              await sendData(bitmapData[offset + i]);
-            }
-            
-            offset += linesToSend;
-            remainingLines -= linesToSend;
-            
-            // Small pause between blocks
-            await new Promise(resolve => setTimeout(resolve, 200));
+            // Update progress
+            const progress = Math.round((i / printData.length) * 100);
+            setStatus(`Printing... ${progress}%`);
           }
-
-          setStatus('Finishing print job...');
-
-          // Send footer
-          await sendData([0x1b, 0x64, 0x02]); // Feed 2 lines
-          await sendData([0x1b, 0x64, 0x02]); // Feed 2 more lines
-          await sendData([0x1f, 0x11, 0x08]);
-          await sendData([0x1f, 0x11, 0x0e]);
-          await sendData([0x1f, 0x11, 0x07]);
-          await sendData([0x1f, 0x11, 0x09]);
+          
+          setStatus('Finishing...');
+          
+          // Send end data
+          await characteristic.writeValueWithResponse(END_DATA);
           
           setStatus('Printed successfully!');
           
           setTimeout(() => {
-            if (isConnected) {
+            if (isConnected && device) {
               setStatus('Connected to ' + device.name);
             }
           }, 2000);
