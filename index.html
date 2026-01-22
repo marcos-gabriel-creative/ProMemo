@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MG Thermal Writer - Phomemo M02S</title>
+  <title>V2 Thermal Writer - Phomemo M02S</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -22,6 +22,7 @@
       const [characteristic, setCharacteristic] = useState(null);
       const [darkness, setDarkness] = useState('standard');
       const [canvasSize, setCanvasSize] = useState('48x50');
+      const [font, setFont] = useState('space-mono');
       const textareaRef = useRef(null);
       const previewCanvasRef = useRef(null);
 
@@ -83,6 +84,17 @@
         '48x25': { width: 384, height: 200, label: '48x25mm' },
         '48x50': { width: 384, height: 400, label: '48x50mm' },
         '48x100': { width: 384, height: 800, label: '48x100mm' }
+      };
+
+      // Font options
+      const FONT_OPTIONS = {
+        'space-mono': { family: 'Space Mono', label: 'Space Mono' },
+        'jetbrains-mono': { family: 'JetBrains Mono', label: 'JetBrains Mono' },
+        'courier': { family: 'Courier New', label: 'Courier' },
+        'monospace': { family: 'monospace', label: 'System Mono' },
+        'arial': { family: 'Arial', label: 'Arial' },
+        'times': { family: 'Times New Roman', label: 'Times' },
+        'georgia': { family: 'Georgia', label: 'Georgia' }
       };
 
       // Darkness levels mapped to heat time values
@@ -149,7 +161,7 @@
         return data;
       };
 
-      const textToBitmap = (text, size) => {
+      const textToBitmap = (text, size, fontKey) => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
@@ -158,6 +170,7 @@
         
         const fontSize = 24;
         const lineHeight = 32;
+        const fontFamily = FONT_OPTIONS[fontKey].family;
         
         canvas.width = width;
         canvas.height = height;
@@ -168,17 +181,17 @@
         
         // Black text
         ctx.fillStyle = 'black';
-        ctx.font = `${fontSize}px "Space Mono", monospace`;
+        ctx.font = `${fontSize}px "${fontFamily}", monospace`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         
-        // Draw each line with minimal padding
+        // Draw each line with minimal padding (2px instead of 5px to use more width)
         const lines = text.split('\n');
         lines.forEach((line, i) => {
           const y = i * lineHeight + 8;
           // Only draw if within canvas bounds
           if (y < height) {
-            ctx.fillText(line, 5, y);
+            ctx.fillText(line, 2, y);
           }
         });
         
@@ -188,7 +201,7 @@
       // Update preview canvas
       const updatePreview = () => {
         if (previewCanvasRef.current) {
-          const canvas = textToBitmap(text, canvasSize);
+          const canvas = textToBitmap(text, canvasSize, font);
           const ctx = previewCanvasRef.current.getContext('2d');
           
           // Set preview canvas size to match
@@ -200,10 +213,10 @@
         }
       };
 
-      // Update preview whenever text or canvas size changes
+      // Update preview whenever text, canvas size, or font changes
       React.useEffect(() => {
         updatePreview();
-      }, [text, canvasSize]);
+      }, [text, canvasSize, font]);
 
       const printText = async () => {
         if (!characteristic || !text.trim()) {
@@ -221,8 +234,8 @@
 
           setStatus('Converting to bitmap...');
 
-          // Convert text to bitmap using selected canvas size
-          const canvas = textToBitmap(text, canvasSize);
+          // Convert text to bitmap using selected canvas size and font
+          const canvas = textToBitmap(text, canvasSize, font);
           const printData = getPrintData(canvas);
           
           const widthBytes = canvas.width / 8;
@@ -464,15 +477,27 @@
             .editor {
               padding: 2rem;
               background: #f8f5f0;
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 2rem;
+            }
+
+            @media (max-width: 768px) {
+              .editor {
+                grid-template-columns: 1fr;
+              }
+            }
+
+            .editor-column {
               display: flex;
               flex-direction: column;
-              gap: 1.5rem;
+              gap: 1rem;
             }
 
             .preview-section {
               display: flex;
               flex-direction: column;
-              align-items: center;
+              align-items: flex-start;
               gap: 1rem;
             }
 
@@ -491,6 +516,7 @@
               padding: 0.5rem;
               max-width: 100%;
               overflow: auto;
+              align-self: center;
             }
 
             #previewCanvas {
@@ -509,7 +535,8 @@
 
             textarea {
               width: 100%;
-              min-height: 300px;
+              min-height: 400px;
+              flex: 1;
               padding: 1rem;
               border: 2px solid #000;
               background: rgba(255, 255, 255, 0.8);
@@ -566,6 +593,14 @@
                     </select>
                   </div>
                   <div className="control-group">
+                    <label className="control-label">Font</label>
+                    <select value={font} onChange={(e) => setFont(e.target.value)}>
+                      {Object.entries(FONT_OPTIONS).map(([key, {label}]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control-group">
                     <label className="control-label">Darkness</label>
                     <select value={darkness} onChange={(e) => setDarkness(e.target.value)}>
                       {Object.entries(DARKNESS_LEVELS).map(([key, {label}]) => (
@@ -594,6 +629,14 @@
                     </select>
                   </div>
                   <div className="control-group">
+                    <label className="control-label">Font</label>
+                    <select value={font} onChange={(e) => setFont(e.target.value)}>
+                      {Object.entries(FONT_OPTIONS).map(([key, {label}]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control-group">
                     <label className="control-label">Darkness</label>
                     <select value={darkness} onChange={(e) => setDarkness(e.target.value)}>
                       {Object.entries(DARKNESS_LEVELS).map(([key, {label}]) => (
@@ -606,27 +649,32 @@
             </div>
 
             <div className="editor">
-              <div className="preview-section">
-                <span className="preview-label">📄 Live Preview (What You See Is What You Get)</span>
-                <div className="preview-canvas-wrapper">
-                  <canvas ref={previewCanvasRef} id="previewCanvas"></canvas>
-                </div>
-                <div className="char-count">
-                  {text.length} characters • {text.split('\n').length} lines
-                  <br/>
-                  <span style={{fontSize: '0.7rem', color: '#999'}}>
-                    Canvas: {CANVAS_SIZES[canvasSize].label} • Max ~31 chars/line
-                  </span>
+              <div className="editor-column">
+                <div className="preview-section">
+                  <span className="preview-label">📄 Live Preview</span>
+                  <div className="preview-canvas-wrapper">
+                    <canvas ref={previewCanvasRef} id="previewCanvas"></canvas>
+                  </div>
+                  <div className="char-count">
+                    {text.length} characters • {text.split('\n').length} lines
+                    <br/>
+                    <span style={{fontSize: '0.7rem', color: '#999'}}>
+                      Canvas: {CANVAS_SIZES[canvasSize].label} • ~33 chars/line
+                    </span>
+                  </div>
                 </div>
               </div>
               
-              <textarea
-                ref={textareaRef}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Start typing your thermal masterpiece..."
-                spellCheck="false"
-              />
+              <div className="editor-column">
+                <span className="preview-label">✏️ Text Editor</span>
+                <textarea
+                  ref={textareaRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Start typing your thermal masterpiece..."
+                  spellCheck="false"
+                />
+              </div>
             </div>
 
             <div className="footer">
