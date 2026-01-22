@@ -42,22 +42,54 @@
         try {
           setStatus('Connecting...');
           
-          // Request Bluetooth device
+          // Request Bluetooth device - accept all services to discover them
           const device = await navigator.bluetooth.requestDevice({
-            filters: [{ name: 'M02S' }],
-            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+            filters: [{ namePrefix: 'M02' }],
+            acceptAllDevices: false,
+            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2']
           });
 
           setDevice(device);
-          setStatus('Connecting to GATT Server...');
+          setStatus('Discovering services...');
 
           const server = await device.gatt.connect();
-          const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-          const char = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+          
+          // Discover all services
+          const services = await server.getPrimaryServices();
+          console.log('Available services:', services);
+          
+          let foundService = null;
+          let foundChar = null;
+          
+          // Try to find a writable characteristic
+          for (const service of services) {
+            console.log('Service UUID:', service.uuid);
+            const characteristics = await service.getCharacteristics();
+            
+            for (const char of characteristics) {
+              console.log('  Characteristic UUID:', char.uuid, 'Properties:', char.properties);
+              
+              // Look for a writable characteristic
+              if (char.properties.write || char.properties.writeWithoutResponse) {
+                foundService = service;
+                foundChar = char;
+                console.log('  ✓ Found writable characteristic!');
+                break;
+              }
+            }
+            
+            if (foundChar) break;
+          }
 
-          setCharacteristic(char);
+          if (!foundChar) {
+            setStatus('No writable characteristic found. Check console for details.');
+            return;
+          }
+
+          setCharacteristic(foundChar);
           setIsConnected(true);
-          setStatus('Connected to ' + device.name);
+          setStatus('Connected! Service: ' + foundService.uuid.substring(0, 8) + '...');
+          
         } catch (error) {
           console.error('Connection failed:', error);
           setStatus('Connection failed: ' + error.message);
@@ -374,6 +406,8 @@
             <div className="preview-note">
               <strong>💡 Tip:</strong> Phomemo M02S prints approximately 32 characters per line. 
               Keep your lines concise for best results!
+              <br/><br/>
+              <strong>🔍 Debug Mode:</strong> Open your browser's console (F12) to see discovered Bluetooth services and UUIDs.
             </div>
 
             <div className="editor">
