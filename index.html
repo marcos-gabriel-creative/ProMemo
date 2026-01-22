@@ -1,164 +1,379 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ProMemo M02S Word Processor</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f0f0f0; display: flex; flex-direction: column; height: 100vh; }
-        .header { background: #2c3e50; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .status-indicator { width: 10px; height: 10px; border-radius: 50%; background: #e74c3c; margin-left: 10px; }
-        .status-indicator.connected { background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
-        .toolbar { background: white; padding: 10px 20px; display: flex; gap: 20px; align-items: center; border-bottom: 1px solid #ddd; flex-wrap: wrap; }
-        .toolbar-group { display: flex; gap: 5px; align-items: center; border-right: 1px solid #ddd; padding-right: 15px; }
-        button { padding: 8px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:disabled { background: #95a5a6; }
-        .editor-container { flex: 1; display: flex; justify-content: center; padding: 20px; overflow-y: auto; }
-        .paper { background: white; width: 384px; min-height: 500px; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        #editor { width: 100%; min-height: 100%; border: none; outline: none; font-family: 'Courier New', monospace; font-size: 14pt; resize: none; white-space: pre-wrap; }
-        #debugConsole { position: fixed; bottom: 20px; right: 20px; width: 300px; height: 150px; background: rgba(0,0,0,0.8); color: #0f0; font-family: monospace; font-size: 10px; padding: 10px; overflow-y: auto; display: none; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>M02S Word Processor</h1>
-        <div style="display:flex; align-items:center;">
-            <span id="connectionText">Disconnected</span>
-            <div class="status-indicator" id="statusIndicator"></div>
-            <button id="connectBtn" style="margin-left:15px;">Connect Printer</button>
-        </div>
-    </div>
+import React, { useState, useRef, useEffect } from 'react';
 
-    <div class="toolbar">
-        <div class="toolbar-group">
-            <button id="printBtn" disabled style="background:#2ecc71;">Print</button>
-            <button id="clearBtn" style="background:#e74c3c;">Clear</button>
-        </div>
-        <div class="toolbar-group">
-            <select id="fontSize">
-                <option value="12">12pt</option>
-                <option value="16" selected>16pt</option>
-                <option value="20">20pt</option>
-                <option value="24">24pt</option>
-            </select>
-        </div>
-    </div>
+export default function ThermalWriter() {
+  const [isConnected, setIsConnected] = useState(false);
+  const [text, setText] = useState('');
+  const [status, setStatus] = useState('Disconnected');
+  const [device, setDevice] = useState(null);
+  const [characteristic, setCharacteristic] = useState(null);
+  const textareaRef = useRef(null);
 
-    <div class="editor-container">
-        <div class="paper">
-            <textarea id="editor" placeholder="Start typing..."></textarea>
-        </div>
-    </div>
+  // ESC/POS commands
+  const ESC = 0x1B;
+  const GS = 0x1D;
+  
+  const commands = {
+    init: [ESC, 0x40], // Initialize printer
+    lineFeed: [0x0A],
+    cut: [GS, 0x56, 0x00], // Cut paper
+    alignLeft: [ESC, 0x61, 0x00],
+    alignCenter: [ESC, 0x61, 0x01],
+    alignRight: [ESC, 0x61, 0x02],
+    bold: [ESC, 0x45, 0x01],
+    boldOff: [ESC, 0x45, 0x00],
+    feedLines: (n) => [ESC, 0x64, n], // Feed n lines
+  };
 
-    <div id="debugConsole"></div>
-    <canvas id="printCanvas" style="display:none;"></canvas>
+  const connectToPrinter = async () => {
+    try {
+      setStatus('Connecting...');
+      
+      // Request Bluetooth device
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: 'M02S' }],
+        optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+      });
 
-    <script>
-        let device, characteristic;
-        const SERVICE_UUID = '0000ff00-0000-1000-8000-00805f9b34fb';
-        const CHAR_UUID = '0000ff01-0000-1000-8000-00805f9b34fb';
+      setDevice(device);
+      setStatus('Connecting to GATT Server...');
 
-        const debug = (msg) => {
-            const console = document.getElementById('debugConsole');
-            console.style.display = 'block';
-            console.innerHTML += `> ${msg}<br>`;
-            console.scrollTop = console.scrollHeight;
-        };
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+      const char = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
 
-        document.getElementById('connectBtn').onclick = async () => {
-            try {
-                device = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'M02' }, { namePrefix: 'Phomemo' }],
-                    optionalServices: [SERVICE_UUID]
-                });
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                characteristic = await service.getCharacteristic(CHAR_UUID);
-                
-                document.getElementById('statusIndicator').classList.add('connected');
-                document.getElementById('connectionText').innerText = "Connected";
-                document.getElementById('printBtn').disabled = false;
-                debug("Printer Ready.");
-            } catch (err) {
-                debug("Error: " + err.message);
-            }
-        };
+      setCharacteristic(char);
+      setIsConnected(true);
+      setStatus('Connected to ' + device.name);
+    } catch (error) {
+      console.error('Connection failed:', error);
+      setStatus('Connection failed: ' + error.message);
+      setIsConnected(false);
+    }
+  };
 
-        async function sendToPrinter(data) {
-            const CHUNK = 20;
-            for (let i = 0; i < data.length; i += CHUNK) {
-                const slice = data.slice(i, i + CHUNK);
-                await characteristic.writeValueWithoutResponse(new Uint8Array(slice));
-                await new Promise(r => setTimeout(r, 35)); // Safe delay for buffer
-            }
+  const disconnect = () => {
+    if (device && device.gatt.connected) {
+      device.gatt.disconnect();
+    }
+    setDevice(null);
+    setCharacteristic(null);
+    setIsConnected(false);
+    setStatus('Disconnected');
+  };
+
+  const sendData = async (data) => {
+    if (!characteristic) return;
+    
+    const chunkSize = 20; // Bluetooth LE characteristic write limit
+    for (let i = 0; i < data.length; i += chunkSize) {
+      const chunk = data.slice(i, i + chunkSize);
+      await characteristic.writeValue(new Uint8Array(chunk));
+      await new Promise(resolve => setTimeout(resolve, 50)); // Small delay between chunks
+    }
+  };
+
+  const printText = async () => {
+    if (!characteristic || !text.trim()) {
+      setStatus('Nothing to print');
+      return;
+    }
+
+    try {
+      setStatus('Printing...');
+
+      // Initialize
+      await sendData(commands.init);
+
+      // Send text
+      const encoder = new TextEncoder();
+      const lines = text.split('\n');
+      
+      for (const line of lines) {
+        if (line.trim()) {
+          const encoded = encoder.encode(line);
+          await sendData(Array.from(encoded));
+        }
+        await sendData(commands.lineFeed);
+      }
+
+      // Feed some extra lines and cut
+      await sendData(commands.feedLines(3));
+      
+      setStatus('Printed successfully!');
+      
+      setTimeout(() => {
+        if (isConnected) {
+          setStatus('Connected to ' + device.name);
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error('Print failed:', error);
+      setStatus('Print failed: ' + error.message);
+    }
+  };
+
+  const clearText = () => {
+    setText('');
+    textareaRef.current?.focus();
+  };
+
+  return (
+    <div className="thermal-writer">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Mono:wght@400;700&display=swap');
+        
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
         }
 
-        document.getElementById('printBtn').onclick = async () => {
-            const canvas = document.getElementById('printCanvas');
-            const ctx = canvas.getContext('2d');
-            const editor = document.getElementById('editor');
-            const fSize = document.getElementById('fontSize').value;
+        .thermal-writer {
+          min-height: 100vh;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          padding: 2rem;
+          font-family: 'JetBrains Mono', monospace;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
 
-            // Setup Canvas Width (M02S = 384px)
-            canvas.width = 384;
-            const lines = editor.value.split('\n');
-            canvas.height = lines.length * (fSize * 1.5) + 40;
+        .container {
+          max-width: 600px;
+          width: 100%;
+          background: #f8f5f0;
+          border-radius: 16px;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          overflow: hidden;
+          position: relative;
+        }
 
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'black';
-            ctx.font = `${fSize}pt Courier New`;
-            
-            lines.forEach((line, i) => {
-                ctx.fillText(line, 10, 40 + (i * fSize * 1.5));
-            });
+        .container::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 8px;
+          background: repeating-linear-gradient(
+            90deg,
+            #000 0px,
+            #000 2px,
+            transparent 2px,
+            transparent 4px
+          );
+        }
 
-            // Process Image to Bitmap
-            const imgData = ctx.getImageData(0, 0, 384, canvas.height);
-            const bitmap = [];
-            for (let y = 0; y < canvas.height; y++) {
-                const row = new Uint8Array(48);
-                for (let x = 0; x < 384; x++) {
-                    const idx = (y * 384 + x) * 4;
-                    const avg = (imgData.data[idx] + imgData.data[idx+1] + imgData.data[idx+2]) / 3;
-                    if (avg < 128) row[Math.floor(x / 8)] |= (0x80 >> (x % 8));
-                }
-                bitmap.push(...row);
-            }
+        .header {
+          background: #2d2d2d;
+          color: #00ff00;
+          padding: 1.5rem;
+          border-bottom: 3px solid #000;
+        }
 
-            try {
-                debug("Starting Print Job...");
-                // Handshake
-                await sendToPrinter([0x1B, 0x40]); // Reset
-                await sendToPrinter([0x1F, 0x11, 0x02, 0x04]); // Wake
+        .header h1 {
+          font-size: 1.5rem;
+          font-weight: 700;
+          margin-bottom: 0.5rem;
+          text-transform: uppercase;
+          letter-spacing: 2px;
+          text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
 
-                // Block Splitting (Required for M02S)
-                const MAX_BLOCK = 255;
-                for (let i = 0; i < canvas.height; i += MAX_BLOCK) {
-                    const blockLines = Math.min(MAX_BLOCK, canvas.height - i);
-                    const blockData = bitmap.slice(i * 48, (i + blockLines) * 48);
-                    
-                    const header = [
-                        0x1D, 0x76, 0x30, 0x00, 
-                        48, 0x00, // 48 bytes wide
-                        blockLines & 0xFF, (blockLines >> 8) & 0xFF
-                    ];
-                    await sendToPrinter(header);
-                    await sendToPrinter(blockData);
-                }
+        .status-bar {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-size: 0.85rem;
+          margin-top: 0.5rem;
+        }
 
-                // Feed and End
-                await sendToPrinter([0x1B, 0x64, 0x03, 0x1F, 0x11, 0x08]);
-                debug("Print Complete.");
-            } catch (err) {
-                debug("Print Error: " + err.message);
-            }
-        };
+        .status-indicator {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: ${isConnected ? '#00ff00' : '#ff3333'};
+          box-shadow: 0 0 10px ${isConnected ? 'rgba(0, 255, 0, 0.6)' : 'rgba(255, 51, 51, 0.6)'};
+          animation: ${isConnected ? 'pulse 2s ease-in-out infinite' : 'none'};
+        }
 
-        document.getElementById('clearBtn').onclick = () => {
-            document.getElementById('editor').value = "";
-        };
-    </script>
-</body>
-</html>
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+
+        .controls {
+          padding: 1.5rem;
+          background: #e8e5e0;
+          border-bottom: 2px dashed #999;
+          display: flex;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+
+        .btn {
+          padding: 0.75rem 1.5rem;
+          border: 2px solid #000;
+          background: #fff;
+          color: #000;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 0.9rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          box-shadow: 4px 4px 0 #000;
+          position: relative;
+        }
+
+        .btn:hover {
+          transform: translate(2px, 2px);
+          box-shadow: 2px 2px 0 #000;
+        }
+
+        .btn:active {
+          transform: translate(4px, 4px);
+          box-shadow: 0 0 0 #000;
+        }
+
+        .btn-primary {
+          background: #00ff00;
+          border-color: #000;
+        }
+
+        .btn-danger {
+          background: #ff3333;
+          color: #fff;
+        }
+
+        .btn-secondary {
+          background: #ffd700;
+        }
+
+        .btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: 2px 2px 0 #000;
+        }
+
+        .editor {
+          padding: 2rem;
+          background: #f8f5f0;
+          background-image: 
+            repeating-linear-gradient(
+              transparent,
+              transparent 1.5rem,
+              #d8d5d0 1.5rem,
+              #d8d5d0 calc(1.5rem + 1px)
+            );
+        }
+
+        .char-count {
+          font-size: 0.75rem;
+          color: #666;
+          margin-bottom: 1rem;
+          font-family: 'Space Mono', monospace;
+        }
+
+        textarea {
+          width: 100%;
+          min-height: 400px;
+          padding: 1rem;
+          border: 2px solid #000;
+          background: rgba(255, 255, 255, 0.8);
+          font-family: 'Space Mono', monospace;
+          font-size: 1rem;
+          line-height: 1.5rem;
+          resize: vertical;
+          color: #000;
+          box-shadow: inset 2px 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        textarea:focus {
+          outline: none;
+          border-color: #667eea;
+          background: rgba(255, 255, 255, 0.95);
+        }
+
+        textarea::placeholder {
+          color: #999;
+          font-style: italic;
+        }
+
+        .footer {
+          padding: 1rem 1.5rem;
+          background: #2d2d2d;
+          color: #00ff00;
+          font-size: 0.75rem;
+          text-align: center;
+          font-family: 'Space Mono', monospace;
+        }
+
+        .preview-note {
+          background: #fff3cd;
+          border: 2px dashed #856404;
+          padding: 1rem;
+          margin: 1rem 1.5rem;
+          border-radius: 4px;
+          font-size: 0.85rem;
+          color: #856404;
+        }
+      `}</style>
+
+      <div className="container">
+        <div className="header">
+          <h1>⚡ Thermal Writer</h1>
+          <div className="status-bar">
+            <div className="status-indicator"></div>
+            <span>{status}</span>
+          </div>
+        </div>
+
+        <div className="controls">
+          {!isConnected ? (
+            <button className="btn btn-primary" onClick={connectToPrinter}>
+              Connect to Printer
+            </button>
+          ) : (
+            <>
+              <button className="btn btn-danger" onClick={disconnect}>
+                Disconnect
+              </button>
+              <button className="btn btn-primary" onClick={printText} disabled={!text.trim()}>
+                Print
+              </button>
+              <button className="btn btn-secondary" onClick={clearText}>
+                Clear
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="preview-note">
+          <strong>💡 Tip:</strong> Phomemo M02S prints approximately 32 characters per line. 
+          Keep your lines concise for best results!
+        </div>
+
+        <div className="editor">
+          <div className="char-count">
+            {text.length} characters • {text.split('\n').length} lines
+          </div>
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Start typing your thermal masterpiece..."
+            spellCheck="false"
+          />
+        </div>
+
+        <div className="footer">
+          PHOMEMO M02S • WEB BLUETOOTH • THERMAL PRINTING
+        </div>
+      </div>
+    </div>
+  );
+}
