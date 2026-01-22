@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MG Thermal Writer - Phomemo M02S</title>
+  <title>V2 Thermal Writer - Phomemo M02S</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -85,8 +85,8 @@
         ]);
       };
 
-      // End data for print session
-      const END_DATA = new Uint8Array([0x1b, 0x64, 0x00]); // ESC d - print and feed
+      // End data for print session - feed 4 lines for easy tearing
+      const END_DATA = new Uint8Array([0x1b, 0x64, 0x04]); // ESC d 4 - print and feed 4 lines
 
       // Determine if pixel should be printed (1 = black dot, 0 = white/no print)
       const getWhitePixel = (canvas, imageData, x, y) => {
@@ -133,8 +133,8 @@
         
         // M02S specs: 384 pixels wide (48mm at 8 pixels/mm = 203 DPI)
         const width = 384;
-        const fontSize = 24;
-        const lineHeight = 32;
+        const fontSize = 18; // Reduced from 24 to fit more characters
+        const lineHeight = 24; // Reduced from 32
         
         // Calculate required height
         const lines = text.split('\n');
@@ -153,9 +153,9 @@
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         
-        // Draw each line
+        // Draw each line with less left padding
         lines.forEach((line, i) => {
-          ctx.fillText(line, 10, i * lineHeight + 10);
+          ctx.fillText(line, 5, i * lineHeight + 8); // Reduced padding from 10 to 5
         });
         
         return canvas;
