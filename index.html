@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thermal Writer - Phomemo M02S</title>
+  <title>v2 Thermal Writer - Phomemo M02S</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -50,6 +50,15 @@
           });
 
           setDevice(device);
+          
+          // Add disconnect handler
+          device.addEventListener('gattserverdisconnected', () => {
+            console.log('Device disconnected');
+            setIsConnected(false);
+            setStatus('Printer disconnected');
+            setCharacteristic(null);
+          });
+
           setStatus('Discovering services...');
 
           const server = await device.gatt.connect();
@@ -108,13 +117,22 @@
       };
 
       const sendData = async (data) => {
-        if (!characteristic) return;
+        if (!characteristic || !device || !device.gatt.connected) {
+          throw new Error('Device not connected');
+        }
         
         const chunkSize = 20; // Bluetooth LE characteristic write limit
         for (let i = 0; i < data.length; i += chunkSize) {
           const chunk = data.slice(i, i + chunkSize);
-          await characteristic.writeValue(new Uint8Array(chunk));
-          await new Promise(resolve => setTimeout(resolve, 50)); // Small delay between chunks
+          
+          try {
+            await characteristic.writeValue(new Uint8Array(chunk));
+            // Longer delay for thermal printers - they need time to process
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (error) {
+            console.error('Send error:', error);
+            throw error;
+          }
         }
       };
 
@@ -195,26 +213,41 @@
         }
 
         try {
+          // Check connection before starting
+          if (!device || !device.gatt.connected) {
+            setStatus('Printer disconnected. Please reconnect.');
+            setIsConnected(false);
+            return;
+          }
+
           setStatus('Converting to bitmap...');
 
           // Convert text to bitmap
           const canvas = textToBitmap(text);
           const bitmapData = canvasToBitmapData(canvas);
           
-          setStatus('Printing...');
+          setStatus('Printing... (this may take a minute)');
 
           // Send header
           await sendData(commands.init);
           await sendData(commands.alignLeft);
           await sendData([0x1f, 0x11, 0x02, 0x04]);
 
-          // Send bitmap data in chunks (max 255 lines per block)
-          const maxLinesPerBlock = 255;
+          // Send bitmap data in smaller chunks (reduce from 255 to 50 lines per block)
+          const maxLinesPerBlock = 50;
           let remainingLines = bitmapData.length;
           let offset = 0;
+          let blockNum = 0;
 
           while (remainingLines > 0) {
+            // Check connection every block
+            if (!device.gatt.connected) {
+              throw new Error('Connection lost during printing');
+            }
+
             const linesToSend = Math.min(remainingLines, maxLinesPerBlock);
+            blockNum++;
+            setStatus(`Printing block ${blockNum}... (${remainingLines} lines remaining)`);
             
             // Block marker: GS v 0
             const blockHeader = [
@@ -226,14 +259,19 @@
             
             await sendData(blockHeader);
             
-            // Send bitmap data
+            // Send bitmap data line by line
             for (let i = 0; i < linesToSend; i++) {
               await sendData(bitmapData[offset + i]);
             }
             
             offset += linesToSend;
             remainingLines -= linesToSend;
+            
+            // Small pause between blocks
+            await new Promise(resolve => setTimeout(resolve, 200));
           }
+
+          setStatus('Finishing print job...');
 
           // Send footer
           await sendData([0x1b, 0x64, 0x02]); // Feed 2 lines
@@ -254,6 +292,12 @@
         } catch (error) {
           console.error('Print failed:', error);
           setStatus('Print failed: ' + error.message);
+          
+          // Check if we lost connection
+          if (!device || !device.gatt.connected) {
+            setIsConnected(false);
+            setStatus('Connection lost. Please reconnect.');
+          }
         }
       };
 
