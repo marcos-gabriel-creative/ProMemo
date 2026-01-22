@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V2 Thermal Writer - Phomemo M02S</title>
+  <title>MG Thermal Writer - Phomemo M02S</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,7 +20,10 @@
       const [status, setStatus] = useState('Disconnected');
       const [device, setDevice] = useState(null);
       const [characteristic, setCharacteristic] = useState(null);
+      const [darkness, setDarkness] = useState('standard');
+      const [canvasSize, setCanvasSize] = useState('48x50');
       const textareaRef = useRef(null);
+      const previewCanvasRef = useRef(null);
 
       const connectToPrinter = async () => {
         try {
@@ -75,7 +78,21 @@
       // Packet size for Bluetooth transmission
       const PACKET_SIZE_BYTES = 128;
 
-      // Header data for print session
+      // Canvas size presets (width x height in mm, converted to pixels at 8px/mm)
+      const CANVAS_SIZES = {
+        '48x25': { width: 384, height: 200, label: '48x25mm' },
+        '48x50': { width: 384, height: 400, label: '48x50mm' },
+        '48x100': { width: 384, height: 800, label: '48x100mm' }
+      };
+
+      // Darkness levels mapped to heat time values
+      const DARKNESS_LEVELS = {
+        'light': { value: 80, label: 'Light' },
+        'standard': { value: 120, label: 'Standard' },
+        'dark': { value: 160, label: 'Dark' }
+      };
+
+      // Header data for print session with optional heat settings
       const getHeaderData = (widthBytes, heightBytes) => {
         return new Uint8Array([
           0x1b, 0x40,           // ESC @ - initialize printer
@@ -83,6 +100,11 @@
           widthBytes & 0xFF, (widthBytes >> 8) & 0xFF,     // width in bytes (little-endian)
           heightBytes & 0xFF, (heightBytes >> 8) & 0xFF    // height in bytes (little-endian)
         ]);
+      };
+
+      // Heat settings command (ESC 7)
+      const getHeatSettings = (heatTime) => {
+        return new Uint8Array([0x1b, 0x37, 7, heatTime, 2]);
       };
 
       // End data for print session - feed 4 lines for easy tearing
@@ -127,18 +149,15 @@
         return data;
       };
 
-      const textToBitmap = (text) => {
+      const textToBitmap = (text, size) => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        // M02S specs: 384 pixels wide (48mm at 8 pixels/mm = 203 DPI)
-        const width = 384;
-        const fontSize = 18; // Reduced from 24 to fit more characters
-        const lineHeight = 24; // Reduced from 32
+        // Get dimensions from selected size
+        const { width, height } = CANVAS_SIZES[size];
         
-        // Calculate required height
-        const lines = text.split('\n');
-        const height = Math.max(lineHeight * lines.length + 20, 100);
+        const fontSize = 24;
+        const lineHeight = 32;
         
         canvas.width = width;
         canvas.height = height;
@@ -153,13 +172,38 @@
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         
-        // Draw each line with less left padding
+        // Draw each line with minimal padding
+        const lines = text.split('\n');
         lines.forEach((line, i) => {
-          ctx.fillText(line, 5, i * lineHeight + 8); // Reduced padding from 10 to 5
+          const y = i * lineHeight + 8;
+          // Only draw if within canvas bounds
+          if (y < height) {
+            ctx.fillText(line, 5, y);
+          }
         });
         
         return canvas;
       };
+
+      // Update preview canvas
+      const updatePreview = () => {
+        if (previewCanvasRef.current) {
+          const canvas = textToBitmap(text, canvasSize);
+          const ctx = previewCanvasRef.current.getContext('2d');
+          
+          // Set preview canvas size to match
+          previewCanvasRef.current.width = canvas.width;
+          previewCanvasRef.current.height = canvas.height;
+          
+          // Draw the preview
+          ctx.drawImage(canvas, 0, 0);
+        }
+      };
+
+      // Update preview whenever text or canvas size changes
+      React.useEffect(() => {
+        updatePreview();
+      }, [text, canvasSize]);
 
       const printText = async () => {
         if (!characteristic || !text.trim()) {
@@ -177,14 +221,20 @@
 
           setStatus('Converting to bitmap...');
 
-          // Convert text to bitmap
-          const canvas = textToBitmap(text);
+          // Convert text to bitmap using selected canvas size
+          const canvas = textToBitmap(text, canvasSize);
           const printData = getPrintData(canvas);
           
           const widthBytes = canvas.width / 8;
           const heightBytes = canvas.height;
           
-          setStatus('Sending header...');
+          const heatTime = DARKNESS_LEVELS[darkness].value;
+          
+          setStatus('Sending initialization...');
+          
+          // Send heat settings for darkness control
+          await characteristic.writeValueWithResponse(getHeatSettings(heatTime));
+          await new Promise(resolve => setTimeout(resolve, 30));
           
           // Send header
           await characteristic.writeValueWithResponse(
@@ -330,6 +380,38 @@
               display: flex;
               gap: 1rem;
               flex-wrap: wrap;
+              align-items: center;
+            }
+
+            .control-group {
+              display: flex;
+              flex-direction: column;
+              gap: 0.5rem;
+            }
+
+            .control-label {
+              font-size: 0.75rem;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #000;
+            }
+
+            select {
+              padding: 0.5rem 1rem;
+              border: 2px solid #000;
+              background: #fff;
+              font-family: 'JetBrains Mono', monospace;
+              font-size: 0.85rem;
+              font-weight: 700;
+              cursor: pointer;
+              text-transform: uppercase;
+              box-shadow: 2px 2px 0 #000;
+            }
+
+            select:focus {
+              outline: none;
+              border-color: #667eea;
             }
 
             .btn {
@@ -382,13 +464,40 @@
             .editor {
               padding: 2rem;
               background: #f8f5f0;
-              background-image: 
-                repeating-linear-gradient(
-                  transparent,
-                  transparent 1.5rem,
-                  #d8d5d0 1.5rem,
-                  #d8d5d0 calc(1.5rem + 1px)
-                );
+              display: flex;
+              flex-direction: column;
+              gap: 1.5rem;
+            }
+
+            .preview-section {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 1rem;
+            }
+
+            .preview-label {
+              font-size: 0.85rem;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+              color: #000;
+            }
+
+            .preview-canvas-wrapper {
+              border: 3px solid #000;
+              box-shadow: 4px 4px 0 #000;
+              background: #fff;
+              padding: 0.5rem;
+              max-width: 100%;
+              overflow: auto;
+            }
+
+            #previewCanvas {
+              display: block;
+              image-rendering: pixelated;
+              max-width: 100%;
+              height: auto;
             }
 
             .char-count {
@@ -400,7 +509,7 @@
 
             textarea {
               width: 100%;
-              min-height: 400px;
+              min-height: 300px;
               padding: 1rem;
               border: 2px solid #000;
               background: rgba(255, 255, 255, 0.8);
@@ -431,16 +540,6 @@
               text-align: center;
               font-family: 'Space Mono', monospace;
             }
-
-            .preview-note {
-              background: #fff3cd;
-              border: 2px dashed #856404;
-              padding: 1rem;
-              margin: 1rem 1.5rem;
-              border-radius: 4px;
-              font-size: 0.85rem;
-              color: #856404;
-            }
           `}</style>
 
           <div className="container">
@@ -454,9 +553,27 @@
 
             <div className="controls">
               {!isConnected ? (
-                <button className="btn btn-primary" onClick={connectToPrinter}>
-                  Connect to Printer
-                </button>
+                <>
+                  <button className="btn btn-primary" onClick={connectToPrinter}>
+                    Connect to Printer
+                  </button>
+                  <div className="control-group">
+                    <label className="control-label">Canvas Size</label>
+                    <select value={canvasSize} onChange={(e) => setCanvasSize(e.target.value)}>
+                      {Object.entries(CANVAS_SIZES).map(([key, {label}]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control-group">
+                    <label className="control-label">Darkness</label>
+                    <select value={darkness} onChange={(e) => setDarkness(e.target.value)}>
+                      {Object.entries(DARKNESS_LEVELS).map(([key, {label}]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
               ) : (
                 <>
                   <button className="btn btn-danger" onClick={disconnect}>
@@ -468,21 +585,41 @@
                   <button className="btn btn-secondary" onClick={clearText}>
                     Clear
                   </button>
+                  <div className="control-group">
+                    <label className="control-label">Canvas Size</label>
+                    <select value={canvasSize} onChange={(e) => setCanvasSize(e.target.value)}>
+                      {Object.entries(CANVAS_SIZES).map(([key, {label}]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="control-group">
+                    <label className="control-label">Darkness</label>
+                    <select value={darkness} onChange={(e) => setDarkness(e.target.value)}>
+                      {Object.entries(DARKNESS_LEVELS).map(([key, {label}]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </>
               )}
             </div>
 
-            <div className="preview-note">
-              <strong>💡 Tip:</strong> Phomemo M02S prints approximately 32 characters per line. 
-              Keep your lines concise for best results!
-              <br/><br/>
-              <strong>🔍 Debug Mode:</strong> Open your browser's console (F12) to see discovered Bluetooth services and UUIDs.
-            </div>
-
             <div className="editor">
-              <div className="char-count">
-                {text.length} characters • {text.split('\n').length} lines
+              <div className="preview-section">
+                <span className="preview-label">📄 Live Preview (What You See Is What You Get)</span>
+                <div className="preview-canvas-wrapper">
+                  <canvas ref={previewCanvasRef} id="previewCanvas"></canvas>
+                </div>
+                <div className="char-count">
+                  {text.length} characters • {text.split('\n').length} lines
+                  <br/>
+                  <span style={{fontSize: '0.7rem', color: '#999'}}>
+                    Canvas: {CANVAS_SIZES[canvasSize].label} • Max ~31 chars/line
+                  </span>
+                </div>
               </div>
+              
               <textarea
                 ref={textareaRef}
                 value={text}
