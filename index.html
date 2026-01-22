@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V3 Thermal Writer - Phomemo M02S</title>
+  <title>MG Thermal Writer - Phomemo M02S</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -88,14 +88,14 @@
       // End data for print session
       const END_DATA = new Uint8Array([0x1b, 0x64, 0x00]); // ESC d - print and feed
 
-      // Determine if pixel should be black (0) or white (1)
+      // Determine if pixel should be printed (1 = black dot, 0 = white/no print)
       const getWhitePixel = (canvas, imageData, x, y) => {
         const idx = (canvas.width * y + x) * 4;
         const red = imageData[idx];
         const green = imageData[idx + 1];
         const blue = imageData[idx + 2];
-        // Return 0 for black pixels, 1 for white pixels
-        return red + green + blue > 384 ? 1 : 0;
+        // Return 1 for black pixels (print), 0 for white pixels (don't print)
+        return red + green + blue > 384 ? 0 : 1;
       };
 
       // Convert canvas to print data
