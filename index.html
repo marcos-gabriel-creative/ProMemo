@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V2 Thermal Writer - Phomemo M02S</title>
+  <title>MG Thermal Writer - Phomemo M02S</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,9 +20,10 @@
       const [status, setStatus] = useState('Disconnected');
       const [device, setDevice] = useState(null);
       const [characteristic, setCharacteristic] = useState(null);
-      const [darkness, setDarkness] = useState('standard');
+      const [size, setSize] = useState('medium');
       const [canvasSize, setCanvasSize] = useState('48x50');
-      const [font, setFont] = useState('space-mono');
+      const [font, setFont] = useState('mono');
+      const [showRuler, setShowRuler] = useState(false);
       const textareaRef = useRef(null);
       const previewCanvasRef = useRef(null);
 
@@ -86,23 +87,22 @@
         '48x100': { width: 384, height: 800, label: '48x100mm' }
       };
 
-      // Font options
+      // Font options - limited to 3
       const FONT_OPTIONS = {
-        'space-mono': { family: 'Space Mono', label: 'Space Mono' },
-        'jetbrains-mono': { family: 'JetBrains Mono', label: 'JetBrains Mono' },
-        'courier': { family: 'Courier New', label: 'Courier' },
-        'monospace': { family: 'monospace', label: 'System Mono' },
-        'arial': { family: 'Arial', label: 'Arial' },
+        'mono': { family: 'Space Mono', label: 'Mono' },
         'times': { family: 'Times New Roman', label: 'Times' },
-        'georgia': { family: 'Georgia', label: 'Georgia' }
+        'courier': { family: 'Courier New', label: 'Courier' }
       };
 
-      // Darkness levels mapped to heat time values
-      const DARKNESS_LEVELS = {
-        'light': { value: 80, label: 'Light' },
-        'standard': { value: 120, label: 'Standard' },
-        'dark': { value: 160, label: 'Dark' }
+      // Font size levels
+      const SIZE_LEVELS = {
+        'small': { fontSize: 18, lineHeight: 24, label: 'Small' },
+        'medium': { fontSize: 24, lineHeight: 32, label: 'Medium' },
+        'large': { fontSize: 32, lineHeight: 40, label: 'Large' }
       };
+
+      // Darkness setting - keeping standard for now but hidden
+      const DARKNESS_VALUE = 120;
 
       // Header data for print session with optional heat settings
       const getHeaderData = (widthBytes, heightBytes) => {
@@ -161,15 +161,76 @@
         return data;
       };
 
-      const textToBitmap = (text, size, fontKey) => {
+      const drawRuler = (ctx, width, height) => {
+        // Draw semi-transparent ruler overlay
+        ctx.save();
+        
+        // Red border around entire canvas
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, 0, width, height);
+        
+        // Vertical grid lines every 50px
+        ctx.strokeStyle = 'rgba(0, 0, 255, 0.3)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= width; x += 50) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+        }
+        
+        // Horizontal grid lines every 50px
+        for (let y = 0; y <= height; y += 50) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        }
+        
+        // Pixel measurements at top
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        for (let x = 0; x <= width; x += 50) {
+          ctx.fillText(`${x}px`, x, 12);
+        }
+        
+        // Left edge marker
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+        ctx.fillRect(0, 0, 5, height);
+        
+        // Right edge marker
+        ctx.fillRect(width - 5, 0, 5, height);
+        
+        // Test characters at different positions
+        ctx.fillStyle = 'blue';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('LEFT EDGE', 1, 30);
+        
+        ctx.textAlign = 'center';
+        ctx.fillText('CENTER', width / 2, 30);
+        
+        ctx.textAlign = 'right';
+        ctx.fillText('RIGHT EDGE', width - 1, 30);
+        
+        // Show actual printable width
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(`Printable Width: ${width}px`, width / 2, height - 10);
+        
+        ctx.restore();
+      };
+
+      const textToBitmap = (text, canvasSizeKey, fontKey, sizeKey, withRuler = false) => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
         // Get dimensions from selected size
-        const { width, height } = CANVAS_SIZES[size];
-        
-        const fontSize = 24;
-        const lineHeight = 32;
+        const { width, height } = CANVAS_SIZES[canvasSizeKey];
+        const { fontSize, lineHeight } = SIZE_LEVELS[sizeKey];
         const fontFamily = FONT_OPTIONS[fontKey].family;
         
         canvas.width = width;
@@ -185,15 +246,24 @@
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         
-        // Draw each line with minimal padding (2px instead of 5px to use more width)
+        // Draw each line with minimal padding and maxWidth to use full canvas
         const lines = text.split('\n');
+        const leftPadding = 1;
+        const maxWidth = width - leftPadding - 1; // Use almost full width
+        
         lines.forEach((line, i) => {
           const y = i * lineHeight + 8;
           // Only draw if within canvas bounds
           if (y < height) {
-            ctx.fillText(line, 2, y);
+            // Use maxWidth parameter to constrain text to canvas width
+            ctx.fillText(line, leftPadding, y, maxWidth);
           }
         });
+        
+        // Draw ruler overlay if requested
+        if (withRuler) {
+          drawRuler(ctx, width, height);
+        }
         
         return canvas;
       };
@@ -201,7 +271,7 @@
       // Update preview canvas
       const updatePreview = () => {
         if (previewCanvasRef.current) {
-          const canvas = textToBitmap(text, canvasSize, font);
+          const canvas = textToBitmap(text, canvasSize, font, size, showRuler);
           const ctx = previewCanvasRef.current.getContext('2d');
           
           // Set preview canvas size to match
@@ -213,10 +283,10 @@
         }
       };
 
-      // Update preview whenever text, canvas size, or font changes
+      // Update preview whenever text, canvas size, font, size, or ruler changes
       React.useEffect(() => {
         updatePreview();
-      }, [text, canvasSize, font]);
+      }, [text, canvasSize, font, size, showRuler]);
 
       const printText = async () => {
         if (!characteristic || !text.trim()) {
@@ -234,19 +304,17 @@
 
           setStatus('Converting to bitmap...');
 
-          // Convert text to bitmap using selected canvas size and font
-          const canvas = textToBitmap(text, canvasSize, font);
+          // Convert text to bitmap using selected canvas size, font, and size (NO RULER for printing)
+          const canvas = textToBitmap(text, canvasSize, font, size, false);
           const printData = getPrintData(canvas);
           
           const widthBytes = canvas.width / 8;
           const heightBytes = canvas.height;
           
-          const heatTime = DARKNESS_LEVELS[darkness].value;
-          
           setStatus('Sending initialization...');
           
-          // Send heat settings for darkness control
-          await characteristic.writeValueWithResponse(getHeatSettings(heatTime));
+          // Send heat settings (using standard darkness)
+          await characteristic.writeValueWithResponse(getHeatSettings(DARKNESS_VALUE));
           await new Promise(resolve => setTimeout(resolve, 30));
           
           // Send header
@@ -533,6 +601,23 @@
               font-family: 'Space Mono', monospace;
             }
 
+            .ruler-toggle {
+              display: flex;
+              align-items: center;
+              gap: 0.5rem;
+              font-size: 0.85rem;
+              font-weight: 700;
+              color: #000;
+              cursor: pointer;
+              user-select: none;
+            }
+
+            .ruler-toggle input[type="checkbox"] {
+              width: 18px;
+              height: 18px;
+              cursor: pointer;
+            }
+
             textarea {
               width: 100%;
               min-height: 400px;
@@ -601,9 +686,9 @@
                     </select>
                   </div>
                   <div className="control-group">
-                    <label className="control-label">Darkness</label>
-                    <select value={darkness} onChange={(e) => setDarkness(e.target.value)}>
-                      {Object.entries(DARKNESS_LEVELS).map(([key, {label}]) => (
+                    <label className="control-label">Size</label>
+                    <select value={size} onChange={(e) => setSize(e.target.value)}>
+                      {Object.entries(SIZE_LEVELS).map(([key, {label}]) => (
                         <option key={key} value={key}>{label}</option>
                       ))}
                     </select>
@@ -637,9 +722,9 @@
                     </select>
                   </div>
                   <div className="control-group">
-                    <label className="control-label">Darkness</label>
-                    <select value={darkness} onChange={(e) => setDarkness(e.target.value)}>
-                      {Object.entries(DARKNESS_LEVELS).map(([key, {label}]) => (
+                    <label className="control-label">Size</label>
+                    <select value={size} onChange={(e) => setSize(e.target.value)}>
+                      {Object.entries(SIZE_LEVELS).map(([key, {label}]) => (
                         <option key={key} value={key}>{label}</option>
                       ))}
                     </select>
@@ -650,22 +735,6 @@
 
             <div className="editor">
               <div className="editor-column">
-                <div className="preview-section">
-                  <span className="preview-label">📄 Live Preview</span>
-                  <div className="preview-canvas-wrapper">
-                    <canvas ref={previewCanvasRef} id="previewCanvas"></canvas>
-                  </div>
-                  <div className="char-count">
-                    {text.length} characters • {text.split('\n').length} lines
-                    <br/>
-                    <span style={{fontSize: '0.7rem', color: '#999'}}>
-                      Canvas: {CANVAS_SIZES[canvasSize].label} • ~33 chars/line
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="editor-column">
                 <span className="preview-label">✏️ Text Editor</span>
                 <textarea
                   ref={textareaRef}
@@ -674,6 +743,30 @@
                   placeholder="Start typing your thermal masterpiece..."
                   spellCheck="false"
                 />
+              </div>
+              
+              <div className="editor-column">
+                <div className="preview-section">
+                  <span className="preview-label">📄 Live Preview</span>
+                  <label className="ruler-toggle">
+                    <input 
+                      type="checkbox" 
+                      checked={showRuler}
+                      onChange={(e) => setShowRuler(e.target.checked)}
+                    />
+                    Show Ruler Guide
+                  </label>
+                  <div className="preview-canvas-wrapper">
+                    <canvas ref={previewCanvasRef} id="previewCanvas"></canvas>
+                  </div>
+                  <div className="char-count">
+                    {text.length} characters • {text.split('\n').length} lines
+                    <br/>
+                    <span style={{fontSize: '0.7rem', color: '#999'}}>
+                      Canvas: {CANVAS_SIZES[canvasSize].label}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
