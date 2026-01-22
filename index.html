@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MG Thermal Writer - Phomemo M02S</title>
+  <title>Thermal Writer - Phomemo M02S</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -80,11 +80,12 @@
       // Packet size for Bluetooth transmission
       const PACKET_SIZE_BYTES = 128;
 
-      // Canvas size presets (width x height in mm, converted to pixels at 8px/mm)
+      // Canvas size presets (width x height in mm, converted to pixels at ~11.8px/mm for 300 DPI)
+      // Width must be divisible by 8 for proper byte alignment: 568px = 71 bytes
       const CANVAS_SIZES = {
-        '48x25': { width: 384, height: 200, label: '48x25mm' },
-        '48x50': { width: 384, height: 400, label: '48x50mm' },
-        '48x100': { width: 384, height: 800, label: '48x100mm' }
+        '48x25': { width: 568, height: 295, label: '48x25mm' },
+        '48x50': { width: 568, height: 590, label: '48x50mm' },
+        '48x100': { width: 568, height: 1180, label: '48x100mm' }
       };
 
       // Font options - limited to 3
@@ -94,11 +95,11 @@
         'courier': { family: 'Courier New', label: 'Courier' }
       };
 
-      // Font size levels
+      // Font size levels (scaled for 300 DPI - ~1.48x larger than 203 DPI)
       const SIZE_LEVELS = {
-        'small': { fontSize: 18, lineHeight: 24, label: 'Small' },
-        'medium': { fontSize: 24, lineHeight: 32, label: 'Medium' },
-        'large': { fontSize: 32, lineHeight: 40, label: 'Large' }
+        'small': { fontSize: 27, lineHeight: 36, label: 'Small' },
+        'medium': { fontSize: 36, lineHeight: 48, label: 'Medium' },
+        'large': { fontSize: 48, lineHeight: 60, label: 'Large' }
       };
 
       // Darkness setting - keeping standard for now but hidden
@@ -246,16 +247,15 @@
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         
-        // Draw each line with minimal padding and maxWidth to use full canvas
+        // Draw each line with minimal padding
         const lines = text.split('\n');
-        const leftPadding = 1;
-        const maxWidth = width - leftPadding - 1; // Use almost full width
+        const leftPadding = 2;
+        const maxWidth = width - leftPadding - 2;
         
         lines.forEach((line, i) => {
           const y = i * lineHeight + 8;
           // Only draw if within canvas bounds
           if (y < height) {
-            // Use maxWidth parameter to constrain text to canvas width
             ctx.fillText(line, leftPadding, y, maxWidth);
           }
         });
@@ -666,68 +666,76 @@
             <div className="controls">
               {!isConnected ? (
                 <>
-                  <button className="btn btn-primary" onClick={connectToPrinter}>
-                    Connect to Printer
-                  </button>
-                  <div className="control-group">
-                    <label className="control-label">Canvas Size</label>
-                    <select value={canvasSize} onChange={(e) => setCanvasSize(e.target.value)}>
-                      {Object.entries(CANVAS_SIZES).map(([key, {label}]) => (
-                        <option key={key} value={key}>{label}</option>
-                      ))}
-                    </select>
+                  <div style={{display: 'flex', gap: '1rem', width: '100%', flexWrap: 'wrap'}}>
+                    <button className="btn btn-primary" onClick={connectToPrinter}>
+                      Connect to Printer
+                    </button>
                   </div>
-                  <div className="control-group">
-                    <label className="control-label">Font</label>
-                    <select value={font} onChange={(e) => setFont(e.target.value)}>
-                      {Object.entries(FONT_OPTIONS).map(([key, {label}]) => (
-                        <option key={key} value={key}>{label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="control-group">
-                    <label className="control-label">Size</label>
-                    <select value={size} onChange={(e) => setSize(e.target.value)}>
-                      {Object.entries(SIZE_LEVELS).map(([key, {label}]) => (
-                        <option key={key} value={key}>{label}</option>
-                      ))}
-                    </select>
+                  <div style={{display: 'flex', gap: '1rem', width: '100%', flexWrap: 'wrap'}}>
+                    <div className="control-group">
+                      <label className="control-label">Canvas Size</label>
+                      <select value={canvasSize} onChange={(e) => setCanvasSize(e.target.value)}>
+                        {Object.entries(CANVAS_SIZES).map(([key, {label}]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="control-group">
+                      <label className="control-label">Font</label>
+                      <select value={font} onChange={(e) => setFont(e.target.value)}>
+                        {Object.entries(FONT_OPTIONS).map(([key, {label}]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="control-group">
+                      <label className="control-label">Size</label>
+                      <select value={size} onChange={(e) => setSize(e.target.value)}>
+                        {Object.entries(SIZE_LEVELS).map(([key, {label}]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </>
               ) : (
                 <>
-                  <button className="btn btn-danger" onClick={disconnect}>
-                    Disconnect
-                  </button>
-                  <button className="btn btn-primary" onClick={printText} disabled={!text.trim()}>
-                    Print
-                  </button>
-                  <button className="btn btn-secondary" onClick={clearText}>
-                    Clear
-                  </button>
-                  <div className="control-group">
-                    <label className="control-label">Canvas Size</label>
-                    <select value={canvasSize} onChange={(e) => setCanvasSize(e.target.value)}>
-                      {Object.entries(CANVAS_SIZES).map(([key, {label}]) => (
-                        <option key={key} value={key}>{label}</option>
-                      ))}
-                    </select>
+                  <div style={{display: 'flex', gap: '1rem', width: '100%', flexWrap: 'wrap'}}>
+                    <button className="btn btn-danger" onClick={disconnect}>
+                      Disconnect
+                    </button>
+                    <button className="btn btn-primary" onClick={printText} disabled={!text.trim()}>
+                      Print
+                    </button>
+                    <button className="btn btn-secondary" onClick={clearText}>
+                      Clear
+                    </button>
                   </div>
-                  <div className="control-group">
-                    <label className="control-label">Font</label>
-                    <select value={font} onChange={(e) => setFont(e.target.value)}>
-                      {Object.entries(FONT_OPTIONS).map(([key, {label}]) => (
-                        <option key={key} value={key}>{label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="control-group">
-                    <label className="control-label">Size</label>
-                    <select value={size} onChange={(e) => setSize(e.target.value)}>
-                      {Object.entries(SIZE_LEVELS).map(([key, {label}]) => (
-                        <option key={key} value={key}>{label}</option>
-                      ))}
-                    </select>
+                  <div style={{display: 'flex', gap: '1rem', width: '100%', flexWrap: 'wrap'}}>
+                    <div className="control-group">
+                      <label className="control-label">Canvas Size</label>
+                      <select value={canvasSize} onChange={(e) => setCanvasSize(e.target.value)}>
+                        {Object.entries(CANVAS_SIZES).map(([key, {label}]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="control-group">
+                      <label className="control-label">Font</label>
+                      <select value={font} onChange={(e) => setFont(e.target.value)}>
+                        {Object.entries(FONT_OPTIONS).map(([key, {label}]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="control-group">
+                      <label className="control-label">Size</label>
+                      <select value={size} onChange={(e) => setSize(e.target.value)}>
+                        {Object.entries(SIZE_LEVELS).map(([key, {label}]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </>
               )}
